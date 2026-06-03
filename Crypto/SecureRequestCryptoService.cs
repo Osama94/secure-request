@@ -7,7 +7,7 @@ namespace SecureRequest.Crypto;
 /// Default implementation of <see cref="ISecureRequestCryptoService"/>.
 /// Algorithms: RSA-OAEP-SHA256 · AES-256-GCM · HMAC-SHA256 · SHA-256.
 /// </summary>
-internal sealed class SecureRequestCryptoService : ISecureRequestCryptoService
+public class SecureRequestCryptoService : ISecureRequestCryptoService
 {
     private const int AesIvSize   = 12;   // GCM standard IV
     private const int AesTagSize  = 16;   // 128-bit authentication tag
@@ -21,6 +21,7 @@ internal sealed class SecureRequestCryptoService : ISecureRequestCryptoService
 
     private readonly RsaKeyProvider _rsaKeyProvider;
 
+    /// <summary>Initializes the service with the singleton <see cref="RsaKeyProvider"/>.</summary>
     public SecureRequestCryptoService(RsaKeyProvider rsaKeyProvider)
         => _rsaKeyProvider = rsaKeyProvider;
 

@@ -13,6 +13,7 @@ namespace SecureRequest.Options;
 /// </summary>
 public sealed class SecureRequestOptions
 {
+    /// <summary>Default appsettings section name: <c>"SecureRequest"</c>.</summary>
     public const string DefaultSectionName = "SecureRequest";
 
     /// <summary>

@@ -10,7 +10,7 @@
     <!-- NuGet package metadata -->
     <IsPackable>true</IsPackable>
     <PackageId>SecureRequest</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>Osama Ahmed</Authors>
     <Company>NIC</Company>
     <Product>SecureRequest</Product>
@@ -18,9 +18,11 @@
       ASP.NET Core middleware pipeline that adds RSA + AES-256-GCM body encryption,
       HMAC-SHA256 request signing, timestamp validation, and nonce-based anti-replay
       protection to any POST / PUT / PATCH endpoint. Zero static secrets —
-      all keys are generated per-request and exchanged via RSA.
+      all keys are generated per-request and exchanged via RSA. Pluggable key storage
+      supports Azure Key Vault, AWS KMS, Google Cloud Secret Manager, HashiCorp Vault,
+      or any custom IRsaKeyStorageProvider implementation.
     </Description>
-    <PackageTags>aspnetcore;middleware;security;encryption;hmac;aes;rsa;request-signing;anti-replay</PackageTags>
+    <PackageTags>aspnetcore;middleware;security;encryption;hmac;aes;rsa;request-signing;anti-replay;keyvault;kms;key-management</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>
@@ -36,6 +38,18 @@
   <!-- Only ASP.NET Core abstractions — no ABP, no EF, no third-party deps -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Exclude tests and samples — they have their own projects and package references -->
+  <ItemGroup>
+    <Compile Remove="tests\**" />
+    <Compile Remove="samples\**" />
+    <Content Remove="tests\**" />
+    <Content Remove="samples\**" />
+    <EmbeddedResource Remove="tests\**" />
+    <EmbeddedResource Remove="samples\**" />
+    <None Remove="tests\**" />
+    <None Remove="samples\**" />
   </ItemGroup>
 
 </Project>

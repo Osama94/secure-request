@@ -6,7 +6,7 @@ namespace SecureRequest.Crypto;
 /// Singleton that holds the server's RSA-2048 key pair in memory.
 ///
 /// Lifecycle:
-///   - On first startup <see cref="RsaKeyInitializerService"/> checks the distributed cache.
+///   - On first startup <see cref="Services.RsaKeyInitializerService"/> checks the distributed cache.
 ///   - If a persisted PKCS-8 private key is found it calls <see cref="LoadFromPrivateKey"/>.
 ///   - Otherwise it calls <see cref="GenerateAndExportPrivateKey"/> and stores the result.
 ///   - All server instances behind a load balancer therefore share the same key pair.
@@ -41,11 +41,13 @@ public sealed class RsaKeyProvider : IRsaPublicKeyProvider, IDisposable
     /// <inheritdoc/>
     public string GetPublicKeyBase64() => Convert.ToBase64String(GetRsa().ExportSubjectPublicKeyInfo());
 
-    // ── Internal use by SecureRequestCryptoService ────────────────────────────
+    // ── Used by SecureRequestCryptoService ───────────────────────────────────
 
-    internal byte[] GetPublicKeySpki() => GetRsa().ExportSubjectPublicKeyInfo();
+    /// <summary>Exports the public key as a DER-encoded SubjectPublicKeyInfo (SPKI) byte array.</summary>
+    public byte[] GetPublicKeySpki() => GetRsa().ExportSubjectPublicKeyInfo();
 
-    internal byte[] Decrypt(byte[] ciphertext) =>
+    /// <summary>RSA-OAEP-SHA256 decrypts <paramref name="ciphertext"/> using the private key.</summary>
+    public byte[] Decrypt(byte[] ciphertext) =>
         GetRsa().Decrypt(ciphertext, RSAEncryptionPadding.OaepSHA256);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -55,5 +57,6 @@ public sealed class RsaKeyProvider : IRsaPublicKeyProvider, IDisposable
             "[SecureRequest] RSA key pair is not initialized yet. " +
             "Ensure AddSecureRequest() is registered and the app has finished starting.");
 
+    /// <inheritdoc/>
     public void Dispose() => _rsa?.Dispose();
 }

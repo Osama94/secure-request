@@ -12,6 +12,7 @@ ASP.NET Core middleware that adds a full **RSA + AES-256-GCM + HMAC-SHA256** sec
 | **Nonce anti-replay** | Each nonce is burned in the distributed cache (Redis / memory) after use. |
 | **Dynamic key exchange** | No static secrets in config. Client generates fresh AES + HMAC keys per-request, RSA-encrypts them, and sends via `X-Encrypted-Key`. |
 | **Load-balancer safe** | RSA key pair is persisted in the distributed cache on first startup — all instances share the same key. |
+| **Pluggable key storage** | Swap the default cache storage for Azure Key Vault, AWS KMS, Google Cloud KMS, or any custom provider via `WithKeyStorage<T>()`. |
 
 ## Installation
 
@@ -77,6 +78,153 @@ The consuming project owns all settings — add the section to its own `appsetti
 | `NonceCacheTtlSeconds` | `700` | How long a used nonce is kept in cache to block replays. Must be > 2 × `TimestampToleranceSeconds`. |
 | `SecuredMethods` | `POST, PUT, PATCH` | HTTP methods the pipeline enforces. Any other method is bypassed. |
 | `ExcludedPaths` | `[]` | URL path segments (case-insensitive substring match) that bypass the pipeline entirely. Always include the public-key endpoint. |
+
+## Key Management Service (KMS) integration
+
+By default the RSA private key is stored in `IDistributedCache` (Redis / in-memory). For production systems you should replace this with a dedicated KMS using the fluent `WithKeyStorage<T>()` method.
+
+### Azure Key Vault
+
+```csharp
+// 1. Implement IRsaKeyStorageProvider
+public class AzureKeyVaultStorageProvider : IRsaKeyStorageProvider
+{
+    private readonly SecretClient _client;
+    private const string SecretName = "SecureRequest-RsaPrivateKey";
+
+    public AzureKeyVaultStorageProvider(SecretClient client) => _client = client;
+
+    public async Task<byte[]?> LoadPrivateKeyAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var secret = await _client.GetSecretAsync(SecretName, cancellationToken: ct);
+            return Convert.FromBase64String(secret.Value.Value);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
+    }
+
+    public async Task StorePrivateKeyAsync(byte[] privateKeyBytes, CancellationToken ct = default)
+        => await _client.SetSecretAsync(SecretName, Convert.ToBase64String(privateKeyBytes), ct);
+}
+
+// 2. Register in Program.cs
+builder.Services.AddAzureClients(b =>
+    b.AddSecretClient(new Uri("https://your-vault.vault.azure.net/")));
+
+builder.Services
+    .AddSecureRequest(builder.Configuration)
+    .WithKeyStorage<AzureKeyVaultStorageProvider>();
+```
+
+### AWS Secrets Manager
+
+```csharp
+public class AwsSecretsManagerStorageProvider : IRsaKeyStorageProvider
+{
+    private readonly IAmazonSecretsManager _client;
+    private const string SecretId = "secure-request/rsa-private-key";
+
+    public AwsSecretsManagerStorageProvider(IAmazonSecretsManager client) => _client = client;
+
+    public async Task<byte[]?> LoadPrivateKeyAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _client.GetSecretValueAsync(
+                new GetSecretValueRequest { SecretId = SecretId }, ct);
+            return Convert.FromBase64String(response.SecretString);
+        }
+        catch (ResourceNotFoundException) { return null; }
+    }
+
+    public async Task StorePrivateKeyAsync(byte[] privateKeyBytes, CancellationToken ct = default)
+    {
+        var base64 = Convert.ToBase64String(privateKeyBytes);
+        try
+        {
+            await _client.PutSecretValueAsync(
+                new PutSecretValueRequest { SecretId = SecretId, SecretString = base64 }, ct);
+        }
+        catch (ResourceNotFoundException)
+        {
+            await _client.CreateSecretAsync(
+                new CreateSecretRequest { Name = SecretId, SecretString = base64 }, ct);
+        }
+    }
+}
+
+// Register in Program.cs
+builder.Services
+    .AddSecureRequest(builder.Configuration)
+    .WithKeyStorage<AwsSecretsManagerStorageProvider>();
+```
+
+### Google Cloud Secret Manager
+
+```csharp
+public class GcpSecretManagerStorageProvider : IRsaKeyStorageProvider
+{
+    private readonly SecretManagerServiceClient _client;
+    private readonly string _projectId;
+    private const string SecretId = "secure-request-rsa-key";
+
+    public GcpSecretManagerStorageProvider(SecretManagerServiceClient client, string projectId)
+    {
+        _client    = client;
+        _projectId = projectId;
+    }
+
+    public async Task<byte[]?> LoadPrivateKeyAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var name    = $"projects/{_projectId}/secrets/{SecretId}/versions/latest";
+            var version = await _client.AccessSecretVersionAsync(name, ct);
+            return version.Payload.Data.ToByteArray();
+        }
+        catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound) { return null; }
+    }
+
+    public async Task StorePrivateKeyAsync(byte[] privateKeyBytes, CancellationToken ct = default)
+    {
+        var secretName = $"projects/{_projectId}/secrets/{SecretId}";
+        try { await _client.GetSecretAsync(secretName, ct); }
+        catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
+        {
+            await _client.CreateSecretAsync(new CreateSecretRequest
+            {
+                Parent   = $"projects/{_projectId}",
+                SecretId = SecretId,
+                Secret   = new Secret { Replication = new Replication { Automatic = new() } }
+            }, ct);
+        }
+
+        await _client.AddSecretVersionAsync(new AddSecretVersionRequest
+        {
+            Parent  = secretName,
+            Payload = new SecretPayload { Data = Google.Protobuf.ByteString.CopyFrom(privateKeyBytes) }
+        }, ct);
+    }
+}
+
+// Register in Program.cs
+builder.Services
+    .AddSecureRequest(builder.Configuration)
+    .WithKeyStorage(sp => new GcpSecretManagerStorageProvider(
+        SecretManagerServiceClient.Create(), "your-gcp-project-id"));
+```
+
+### Factory overload (for advanced scenarios)
+
+```csharp
+builder.Services
+    .AddSecureRequest(builder.Configuration)
+    .WithKeyStorage(sp => new MyCustomProvider(
+        sp.GetRequiredService<IMyDependency>(), "custom-param"));
+```
+
+---
 
 ## Feature flags
 

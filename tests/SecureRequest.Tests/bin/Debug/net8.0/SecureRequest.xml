@@ -1,0 +1,488 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>SecureRequest</name>
+    </assembly>
+    <members>
+        <member name="T:SecureRequest.Crypto.IRsaPublicKeyProvider">
+            <summary>
+            Provides the server's RSA public key so it can be exposed to clients.
+            Implement or resolve this to serve the key from a controller / minimal-API endpoint.
+            </summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.IRsaPublicKeyProvider.GetPublicKeyBase64">
+            <summary>Returns the RSA public key encoded as a Base64 SPKI (SubjectPublicKeyInfo) string.</summary>
+        </member>
+        <member name="T:SecureRequest.Crypto.ISecureRequestCryptoService">
+            <summary>
+            Cryptographic operations used by <see cref="T:SecureRequest.Middleware.SecureRequestMiddleware"/>.
+            The default implementation uses RSA-OAEP-SHA256, AES-256-GCM, and HMAC-SHA256.
+            </summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.ISecureRequestCryptoService.DecryptSecretKey(System.Byte[])">
+            <summary>RSA-OAEP decrypts the per-request secret key (64 bytes: 32 AES + 32 HMAC).</summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.ISecureRequestCryptoService.Decrypt(System.Byte[],System.Byte[])">
+            <summary>AES-256-GCM decrypts <paramref name="encryptedPayload"/> using <paramref name="aesKey"/>.</summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.ISecureRequestCryptoService.ComputeBodyHash(System.Byte[])">
+            <summary>Returns the SHA-256 hex digest of <paramref name="body"/> (empty-body constant when input is empty).</summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.ISecureRequestCryptoService.ComputeSignature(System.String,System.String,System.String,System.String,System.String,System.String,System.Byte[])">
+            <summary>
+            Builds and HMAC-SHA256 signs the canonical string:
+            <c>METHOD\nPATH\nQUERY\nTIMESTAMP\nNONCE\nBODY_HEX_HASH</c>
+            </summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.ISecureRequestCryptoService.ValidateSignature(System.String,System.String)">
+            <summary>Constant-time comparison of two Base64 signature strings.</summary>
+        </member>
+        <member name="T:SecureRequest.Crypto.RsaKeyProvider">
+             <summary>
+             Singleton that holds the server's RSA-2048 key pair in memory.
+            
+             Lifecycle:
+               - On first startup <see cref="T:SecureRequest.Services.RsaKeyInitializerService"/> checks the distributed cache.
+               - If a persisted PKCS-8 private key is found it calls <see cref="M:SecureRequest.Crypto.RsaKeyProvider.LoadFromPrivateKey(System.Byte[])"/>.
+               - Otherwise it calls <see cref="M:SecureRequest.Crypto.RsaKeyProvider.GenerateAndExportPrivateKey"/> and stores the result.
+               - All server instances behind a load balancer therefore share the same key pair.
+             </summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.RsaKeyProvider.LoadFromPrivateKey(System.Byte[])">
+            <summary>Loads an existing PKCS-8 private key (retrieved from the distributed cache).</summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.RsaKeyProvider.GenerateAndExportPrivateKey">
+            <summary>
+            Generates a fresh RSA-2048 key pair, stores it, and returns the PKCS-8 private key bytes
+            so the caller can persist them to the distributed cache.
+            </summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.RsaKeyProvider.GetPublicKeyBase64">
+            <inheritdoc/>
+        </member>
+        <member name="M:SecureRequest.Crypto.RsaKeyProvider.GetPublicKeySpki">
+            <summary>Exports the public key as a DER-encoded SubjectPublicKeyInfo (SPKI) byte array.</summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.RsaKeyProvider.Decrypt(System.Byte[])">
+            <summary>RSA-OAEP-SHA256 decrypts <paramref name="ciphertext"/> using the private key.</summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.RsaKeyProvider.Dispose">
+            <inheritdoc/>
+        </member>
+        <member name="T:SecureRequest.Crypto.SecureRequestCryptoService">
+            <summary>
+            Default implementation of <see cref="T:SecureRequest.Crypto.ISecureRequestCryptoService"/>.
+            Algorithms: RSA-OAEP-SHA256 · AES-256-GCM · HMAC-SHA256 · SHA-256.
+            </summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.SecureRequestCryptoService.#ctor(SecureRequest.Crypto.RsaKeyProvider)">
+            <summary>Initializes the service with the singleton <see cref="T:SecureRequest.Crypto.RsaKeyProvider"/>.</summary>
+        </member>
+        <member name="M:SecureRequest.Crypto.SecureRequestCryptoService.DecryptSecretKey(System.Byte[])">
+            <inheritdoc/>
+        </member>
+        <member name="M:SecureRequest.Crypto.SecureRequestCryptoService.Decrypt(System.Byte[],System.Byte[])">
+            <inheritdoc/>
+        </member>
+        <member name="M:SecureRequest.Crypto.SecureRequestCryptoService.ComputeBodyHash(System.Byte[])">
+            <inheritdoc/>
+        </member>
+        <member name="M:SecureRequest.Crypto.SecureRequestCryptoService.ComputeSignature(System.String,System.String,System.String,System.String,System.String,System.String,System.Byte[])">
+            <inheritdoc/>
+        </member>
+        <member name="M:SecureRequest.Crypto.SecureRequestCryptoService.ValidateSignature(System.String,System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="T:SecureRequest.Extensions.SecureRequestServiceExtensions">
+             <summary>
+             Extension methods to register and activate the SecureRequest pipeline.
+            
+             Minimal setup (uses distributed cache for key storage):
+             <code>
+               builder.Services.AddDistributedMemoryCache(); // or AddStackExchangeRedisCache(...)
+               builder.Services.AddSecureRequest(builder.Configuration);
+            
+               var app = builder.Build();
+               app.UseSecureRequest();
+               app.MapSecureRequestPublicKey();
+             </code>
+            
+             With a custom KMS provider (Azure Key Vault, AWS KMS, etc.):
+             <code>
+               builder.Services.AddSecureRequest(builder.Configuration)
+                               .WithKeyStorage&lt;AzureKeyVaultStorageProvider&gt;();
+             </code>
+            
+             With inline options override:
+             <code>
+               builder.Services.AddSecureRequest(builder.Configuration, o =>
+               {
+                   o.Enabled              = true;
+                   o.EnableBodyEncryption = true;
+                   o.EnableHmacSigning    = true;
+               }).WithKeyStorage&lt;MyKmsProvider&gt;();
+             </code>
+             </summary>
+        </member>
+        <member name="M:SecureRequest.Extensions.SecureRequestServiceExtensions.AddSecureRequest(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration,System.String,System.Action{SecureRequest.Options.SecureRequestOptions})">
+            <summary>
+            Registers all SecureRequest services and returns a <see cref="T:SecureRequest.Extensions.SecureRequestBuilder"/>
+            for optional fluent configuration (e.g. custom key storage).
+            </summary>
+            <remarks>
+            Unless <c>.WithKeyStorage&lt;T&gt;()</c> is called, the default key storage is
+            <see cref="T:SecureRequest.KeyStorage.DistributedCacheKeyStorageProvider"/> which requires <c>IDistributedCache</c>
+            to be registered (e.g. <c>AddStackExchangeRedisCache(…)</c> or <c>AddDistributedMemoryCache()</c>).
+            </remarks>
+        </member>
+        <member name="M:SecureRequest.Extensions.SecureRequestServiceExtensions.UseSecureRequest(Microsoft.AspNetCore.Builder.IApplicationBuilder)">
+            <summary>
+            Adds <see cref="T:SecureRequest.Middleware.SecureRequestMiddleware"/> to the ASP.NET Core pipeline.
+            Call this before <c>UseRouting()</c> / <c>UseAuthorization()</c>.
+            </summary>
+        </member>
+        <member name="M:SecureRequest.Extensions.SecureRequestServiceExtensions.MapSecureRequestPublicKey(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder,System.String)">
+            <summary>
+            Maps a minimal-API endpoint that returns the server's RSA public key as Base64.
+            Clients call this once to cache the key for encrypting X-Encrypted-Key headers.
+            Default route: <c>GET /api/secure/public-key</c>
+            </summary>
+            <summary>
+            Maps a minimal-API endpoint that returns the server's RSA public key as Base64.
+            Clients call this once to cache the key for encrypting X-Encrypted-Key headers.
+            Default route: <c>GET /api/secure/public-key</c>
+            Responds with <c>Cache-Control: public, max-age=86400</c> so clients cache it for 24 hours.
+            </summary>
+        </member>
+        <member name="M:SecureRequest.Extensions.SecureRequestServiceExtensions.MapSecureRequestKeyRotation(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder,System.String,System.String)">
+             <summary>
+             Maps a protected minimal-API endpoint that triggers RSA key rotation.
+             Default route: <c>POST /api/secure/rotate-key</c>
+            
+             ⚠️ This endpoint MUST be protected — apply an authorization policy:
+             <code>
+               app.MapSecureRequestKeyRotation(policy: "AdminOnly");
+             </code>
+             After rotation, clients holding the old public key will receive a 422 on their next
+             secured request, automatically re-fetch the new key, and retry transparently.
+             </summary>
+        </member>
+        <member name="T:SecureRequest.Extensions.SecureRequestBuilder">
+            <summary>
+            Fluent builder returned by <see cref="M:SecureRequest.Extensions.SecureRequestServiceExtensions.AddSecureRequest(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration,System.String,System.Action{SecureRequest.Options.SecureRequestOptions})"/>
+            for chaining optional configuration such as custom key storage providers.
+            </summary>
+        </member>
+        <member name="M:SecureRequest.Extensions.SecureRequestBuilder.WithKeyStorage``1">
+             <summary>
+             Replaces the default <see cref="T:SecureRequest.KeyStorage.DistributedCacheKeyStorageProvider"/> with a custom
+             <see cref="T:SecureRequest.KeyStorage.IRsaKeyStorageProvider"/> implementation — e.g. Azure Key Vault, AWS KMS,
+             Google Cloud Secret Manager, or HashiCorp Vault.
+            
+             <example>
+             <code>
+             builder.Services
+                 .AddSecureRequest(builder.Configuration)
+                 .WithKeyStorage&lt;AzureKeyVaultStorageProvider&gt;();
+             </code>
+             </example>
+             </summary>
+        </member>
+        <member name="M:SecureRequest.Extensions.SecureRequestBuilder.WithKeyStorage(System.Func{System.IServiceProvider,SecureRequest.KeyStorage.IRsaKeyStorageProvider})">
+             <summary>
+             Replaces the default key storage with a factory-based custom provider.
+             Use this when your provider needs constructor arguments not available via DI.
+            
+             <example>
+             <code>
+             builder.Services
+                 .AddSecureRequest(builder.Configuration)
+                 .WithKeyStorage(sp => new AwsSecretsManagerStorageProvider(
+                     sp.GetRequiredService&lt;IAmazonSecretsManager&gt;(), "my-secret-id"));
+             </code>
+             </example>
+             </summary>
+        </member>
+        <member name="T:SecureRequest.KeyStorage.DistributedCacheKeyStorageProvider">
+             <summary>
+             Default <see cref="T:SecureRequest.KeyStorage.IRsaKeyStorageProvider"/> implementation that persists the RSA private key
+             in <c>IDistributedCache</c> (Redis, SQL, in-memory, etc.).
+            
+             ⚠️  SECURITY WARNING:
+             This provider stores the RSA private key as plain Base64 in your distributed cache.
+             Anyone with read access to Redis / your cache store can extract the private key and
+             decrypt all X-Encrypted-Key headers, defeating the purpose of the encryption.
+            
+             For production systems handling sensitive data, replace this with a dedicated
+             Key Management Service using <c>.WithKeyStorage&lt;YourProvider&gt;()</c>:
+               - Azure Key Vault  → <c>AzureKeyVaultStorageProvider</c>
+               - AWS KMS / Secrets Manager → <c>AwsSecretsManagerStorageProvider</c>
+               - Google Cloud Secret Manager → <c>GcpSecretManagerStorageProvider</c>
+               - HashiCorp Vault → custom <c>IRsaKeyStorageProvider</c> implementation
+            
+             This default implementation is intentionally kept simple for development and
+             low-sensitivity environments where the cache store is already trusted.
+             </summary>
+        </member>
+        <member name="M:SecureRequest.KeyStorage.DistributedCacheKeyStorageProvider.#ctor(Microsoft.Extensions.Caching.Distributed.IDistributedCache,Microsoft.Extensions.Logging.ILogger{SecureRequest.KeyStorage.DistributedCacheKeyStorageProvider})">
+            <summary>Initializes the provider with the distributed cache and logger.</summary>
+        </member>
+        <member name="M:SecureRequest.KeyStorage.DistributedCacheKeyStorageProvider.LoadPrivateKeyAsync(System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:SecureRequest.KeyStorage.DistributedCacheKeyStorageProvider.StorePrivateKeyAsync(System.Byte[],System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="T:SecureRequest.KeyStorage.IRsaKeyStorageProvider">
+             <summary>
+             Abstraction for storing and retrieving the RSA private key used by the secure-request pipeline.
+            
+             Implement this interface to integrate with your preferred Key Management Service:
+               - AWS Secrets Manager / AWS KMS
+               - Azure Key Vault
+               - Google Cloud Secret Manager
+               - HashiCorp Vault
+               - Any other secure store
+            
+             The default implementation (<see cref="T:SecureRequest.KeyStorage.DistributedCacheKeyStorageProvider"/>) uses
+             <c>IDistributedCache</c> (Redis / in-memory) and is registered automatically
+             unless you override it via <c>AddSecureRequest().WithKeyStorage&lt;T&gt;()</c>.
+            
+             <example>
+             Azure Key Vault example:
+             <code>
+             public class AzureKeyVaultStorageProvider : IRsaKeyStorageProvider
+             {
+                 private readonly SecretClient _client;
+                 private const string SecretName = "SecureRequest-RsaPrivateKey";
+            
+                 public AzureKeyVaultStorageProvider(SecretClient client) => _client = client;
+            
+                 public async Task&lt;byte[]?&gt; LoadPrivateKeyAsync(CancellationToken ct = default)
+                 {
+                     try
+                     {
+                         var secret = await _client.GetSecretAsync(SecretName, cancellationToken: ct);
+                         return Convert.FromBase64String(secret.Value.Value);
+                     }
+                     catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
+                 }
+            
+                 public async Task StorePrivateKeyAsync(byte[] privateKeyBytes, CancellationToken ct = default)
+                 {
+                     var base64 = Convert.ToBase64String(privateKeyBytes);
+                     await _client.SetSecretAsync(SecretName, base64, ct);
+                 }
+             }
+             </code>
+             </example>
+            
+             <example>
+             AWS Secrets Manager example:
+             <code>
+             public class AwsSecretsManagerStorageProvider : IRsaKeyStorageProvider
+             {
+                 private readonly IAmazonSecretsManager _client;
+                 private const string SecretId = "secure-request/rsa-private-key";
+            
+                 public AwsSecretsManagerStorageProvider(IAmazonSecretsManager client) => _client = client;
+            
+                 public async Task&lt;byte[]?&gt; LoadPrivateKeyAsync(CancellationToken ct = default)
+                 {
+                     try
+                     {
+                         var response = await _client.GetSecretValueAsync(
+                             new GetSecretValueRequest { SecretId = SecretId }, ct);
+                         return Convert.FromBase64String(response.SecretString);
+                     }
+                     catch (ResourceNotFoundException) { return null; }
+                 }
+            
+                 public async Task StorePrivateKeyAsync(byte[] privateKeyBytes, CancellationToken ct = default)
+                 {
+                     var base64 = Convert.ToBase64String(privateKeyBytes);
+                     try
+                     {
+                         await _client.PutSecretValueAsync(
+                             new PutSecretValueRequest { SecretId = SecretId, SecretString = base64 }, ct);
+                     }
+                     catch (ResourceNotFoundException)
+                     {
+                         await _client.CreateSecretAsync(
+                             new CreateSecretRequest { Name = SecretId, SecretString = base64 }, ct);
+                     }
+                 }
+             }
+             </code>
+             </example>
+             </summary>
+        </member>
+        <member name="M:SecureRequest.KeyStorage.IRsaKeyStorageProvider.LoadPrivateKeyAsync(System.Threading.CancellationToken)">
+            <summary>
+            Loads the RSA private key (PKCS-8 bytes) from the store.
+            Returns <c>null</c> if no key has been stored yet — the caller will then generate a new one.
+            </summary>
+        </member>
+        <member name="M:SecureRequest.KeyStorage.IRsaKeyStorageProvider.StorePrivateKeyAsync(System.Byte[],System.Threading.CancellationToken)">
+            <summary>
+            Persists the RSA private key (PKCS-8 bytes) to the store.
+            Called once on first startup when no key exists yet.
+            </summary>
+        </member>
+        <member name="T:SecureRequest.Middleware.SecureRequestMiddleware">
+             <summary>
+             ASP.NET Core middleware that enforces the secure-request pipeline.
+            
+             Steps (which run depends on <see cref="P:SecureRequest.Options.SecureRequestOptions.EnableBodyEncryption"/>
+             and <see cref="P:SecureRequest.Options.SecureRequestOptions.EnableHmacSigning"/>):
+            
+               1. Bypass check     — OPTIONS, excluded paths, methods not in SecuredMethods → pass through.
+               2. Header presence  — X-Timestamp + X-Nonce always; X-Encrypted-Key when crypto active;
+                                     X-Signature when HMAC active.
+               3. RSA key decrypt  — X-Encrypted-Key → 32-byte AES key + 32-byte HMAC key.
+               4. Timestamp check  — rejects drift > TimestampToleranceSeconds.
+               5. Nonce check      — rejects replayed nonces via IDistributedCache.
+               6. Body handling    — decrypts when EnableBodyEncryption=true, reads raw otherwise.
+               7. HMAC verify      — verifies X-Signature when EnableHmacSigning=true.
+               8. Nonce burn       — stores nonce (TTL = NonceCacheTtlSeconds).
+               9. Body replace     — swaps encrypted/raw body with plaintext for downstream handlers.
+             </summary>
+        </member>
+        <member name="M:SecureRequest.Middleware.SecureRequestMiddleware.#ctor(Microsoft.AspNetCore.Http.RequestDelegate,Microsoft.Extensions.Logging.ILogger{SecureRequest.Middleware.SecureRequestMiddleware},Microsoft.Extensions.Options.IOptions{SecureRequest.Options.SecureRequestOptions})">
+            <summary>Initializes the middleware with the pipeline delegate, logger, and options.</summary>
+        </member>
+        <member name="M:SecureRequest.Middleware.SecureRequestMiddleware.InvokeAsync(Microsoft.AspNetCore.Http.HttpContext,Microsoft.Extensions.Caching.Distributed.IDistributedCache)">
+            <summary>Processes the HTTP request through the secure-request pipeline.</summary>
+        </member>
+        <member name="M:SecureRequest.Middleware.SecureRequestMiddleware.TryBase64Decode(System.Byte[],System.Byte[]@)">
+            <summary>
+            Tries multiple decoding strategies to handle different Content-Type side-effects:
+              text/plain                    → raw base64 (correct)
+              application/json              → JSON-quoted: "BASE64=="
+              application/x-www-form-urlencoded → URL-encoded: + → %2B, / → %2F
+            </summary>
+        </member>
+        <member name="T:SecureRequest.Options.SecureRequestOptions">
+             <summary>
+             Configuration for the RSA + AES-256-GCM + HMAC secure-request pipeline.
+             Bind from appsettings under the key passed to <c>AddSecureRequest()</c> (default: "SecureRequest").
+            
+             Feature matrix — EnableBodyEncryption and EnableHmacSigning are independent:
+               true  + true  → full pipeline — body encrypted AND signature verified (recommended for production)
+               false + true  → integrity only — body sent as plaintext, HMAC signature still verified
+               true  + false → confidentiality only — body encrypted, signature check skipped
+               false + false → anti-replay only — timestamp + nonce checked, no crypto on body
+               Enabled=false → bypass everything (useful in development / Swagger)
+             </summary>
+        </member>
+        <member name="F:SecureRequest.Options.SecureRequestOptions.DefaultSectionName">
+            <summary>Default appsettings section name: <c>"SecureRequest"</c>.</summary>
+        </member>
+        <member name="P:SecureRequest.Options.SecureRequestOptions.Enabled">
+            <summary>
+            Master switch. When <c>false</c> the entire middleware is bypassed.
+            Default: <c>false</c> — opt-in per environment.
+            </summary>
+        </member>
+        <member name="P:SecureRequest.Options.SecureRequestOptions.EnableBodyEncryption">
+            <summary>
+            When <c>true</c> the client AES-256-GCM encrypts the request body and the server
+            decrypts it before passing the plaintext to controllers.
+            Requires <c>X-Encrypted-Key</c> header. Default: <c>true</c>.
+            </summary>
+        </member>
+        <member name="P:SecureRequest.Options.SecureRequestOptions.EnableHmacSigning">
+            <summary>
+            When <c>true</c> the client HMAC-SHA256 signs a canonical string over the request
+            and the server verifies the <c>X-Signature</c> header.
+            Requires <c>X-Encrypted-Key</c> header. Default: <c>true</c>.
+            </summary>
+        </member>
+        <member name="P:SecureRequest.Options.SecureRequestOptions.TimestampToleranceSeconds">
+            <summary>
+            Maximum allowed clock-skew between client and server in seconds.
+            Default: 300 s (5 minutes).
+            </summary>
+        </member>
+        <member name="P:SecureRequest.Options.SecureRequestOptions.NonceCacheTtlSeconds">
+            <summary>
+            How long a consumed nonce is retained in the cache to block replays.
+            Must be greater than 2 × <see cref="P:SecureRequest.Options.SecureRequestOptions.TimestampToleranceSeconds"/>.
+            Default: 700 s.
+            </summary>
+        </member>
+        <member name="P:SecureRequest.Options.SecureRequestOptions.SecuredMethods">
+            <summary>
+            HTTP methods the pipeline enforces.
+            Requests whose method is not in this list are bypassed automatically.
+            Default: POST, PUT, PATCH.
+            </summary>
+        </member>
+        <member name="P:SecureRequest.Options.SecureRequestOptions.ExcludedPaths">
+            <summary>
+            URL path segments (case-insensitive) that bypass the pipeline.
+            The match is a substring check on the full display URL.
+            Example: "/api/public" bypasses anything whose URL contains that segment.
+            </summary>
+        </member>
+        <member name="T:SecureRequest.Services.ISecureRequestKeyRotationService">
+             <summary>
+             Provides RSA key pair rotation for the secure-request pipeline.
+            
+             Key rotation flow:
+               1. Generates a new RSA-2048 key pair.
+               2. Persists the new private key via <see cref="T:SecureRequest.KeyStorage.IRsaKeyStorageProvider"/>
+                  (overwrites the old key in Redis / Azure Key Vault / AWS KMS / etc.).
+               3. Loads the new key pair into memory — all future requests use the new keys immediately.
+               4. Clients that cached the old public key will receive a 422 on their next request,
+                  automatically clear their cache, re-fetch the new public key, and retry.
+                  (This is handled by the built-in 422 auto-retry in the frontend interceptor.)
+            
+             When to rotate:
+               - On a regular schedule (e.g. every 90 days via a cron job or scheduled task)
+               - After a suspected key compromise
+               - After deploying a new environment
+             </summary>
+        </member>
+        <member name="M:SecureRequest.Services.ISecureRequestKeyRotationService.RotateKeyAsync(System.Threading.CancellationToken)">
+            <summary>
+            Rotates the RSA key pair: generates a new pair, persists it, and activates it immediately.
+            Returns the new public key as Base64 so callers can log or audit it.
+            </summary>
+        </member>
+        <member name="T:SecureRequest.Services.RsaKeyInitializerService">
+             <summary>
+             Hosted service that initialises the RSA key pair exactly once at application startup.
+            
+             Strategy:
+               1. Resolve <see cref="T:SecureRequest.KeyStorage.IRsaKeyStorageProvider"/> — defaults to distributed cache,
+                  or a custom KMS provider registered via <c>.WithKeyStorage&lt;T&gt;()</c>.
+               2. Found   → load it — all instances share the same key pair.
+               3. Not found → generate a new key pair, persist it via the storage provider.
+            
+             This guarantees all server instances behind a load balancer always decrypt
+             X-Encrypted-Key headers correctly regardless of which instance handles the request.
+             </summary>
+        </member>
+        <member name="M:SecureRequest.Services.RsaKeyInitializerService.#ctor(SecureRequest.Crypto.RsaKeyProvider,Microsoft.Extensions.DependencyInjection.IServiceScopeFactory,Microsoft.Extensions.Logging.ILogger{SecureRequest.Services.RsaKeyInitializerService})">
+            <summary>Initializes the service with the RSA key provider, scope factory, and logger.</summary>
+        </member>
+        <member name="M:SecureRequest.Services.RsaKeyInitializerService.StartAsync(System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:SecureRequest.Services.RsaKeyInitializerService.StopAsync(System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="T:SecureRequest.Services.SecureRequestKeyRotationService">
+            <summary>
+            Default implementation of <see cref="T:SecureRequest.Services.ISecureRequestKeyRotationService"/>.
+            </summary>
+        </member>
+        <member name="M:SecureRequest.Services.SecureRequestKeyRotationService.#ctor(SecureRequest.Crypto.RsaKeyProvider,SecureRequest.KeyStorage.IRsaKeyStorageProvider,Microsoft.Extensions.Logging.ILogger{SecureRequest.Services.SecureRequestKeyRotationService})">
+            <summary>Initializes the rotation service with the RSA key provider, storage provider, and logger.</summary>
+        </member>
+        <member name="M:SecureRequest.Services.SecureRequestKeyRotationService.RotateKeyAsync(System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+    </members>
+</doc>

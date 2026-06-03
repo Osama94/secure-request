@@ -34,6 +34,7 @@ public sealed class SecureRequestMiddleware
     private readonly ILogger<SecureRequestMiddleware> _logger;
     private readonly SecureRequestOptions        _options;
 
+    /// <summary>Initializes the middleware with the pipeline delegate, logger, and options.</summary>
     public SecureRequestMiddleware(
         RequestDelegate next,
         ILogger<SecureRequestMiddleware> logger,
@@ -44,6 +45,7 @@ public sealed class SecureRequestMiddleware
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
 
+    /// <summary>Processes the HTTP request through the secure-request pipeline.</summary>
     public async Task InvokeAsync(HttpContext context, IDistributedCache cache)
     {
         if (IsExcluded(context))
