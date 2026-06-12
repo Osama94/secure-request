@@ -43,6 +43,9 @@ public class SecureRequestMiddlewareTests : IAsyncLifetime
                     rsaKeyProvider.GenerateAndExportPrivateKey();
                     services.AddSingleton(rsaKeyProvider);
                     services.AddSingleton<IRsaPublicKeyProvider>(rsaKeyProvider);
+                    // LocalRsaDecryptProvider was added in v1.2.0 — must be registered explicitly
+                    // when building the DI container manually (outside of AddSecureRequest()).
+                    services.AddSingleton<IRsaDecryptProvider>(new LocalRsaDecryptProvider(rsaKeyProvider));
                     services.AddTransient<ISecureRequestCryptoService, SecureRequestCryptoService>();
 
                     services.Configure<SecureRequestOptions>(o =>

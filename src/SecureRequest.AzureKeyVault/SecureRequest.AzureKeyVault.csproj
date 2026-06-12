@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- NuGet package metadata -->
+    <IsPackable>true</IsPackable>
+    <PackageId>SecureRequest.AzureKeyVault</PackageId>
+    <Version>1.1.0</Version>
+    <Authors>Osama Ahmed</Authors>
+    <Product>SecureRequest.AzureKeyVault</Product>
+    <Description>
+      Azure Key Vault integration for the SecureRequest NuGet package.
+      Secrets mode: stores the RSA private key as a Key Vault secret.
+      True HSM mode: the RSA key pair lives entirely in Key Vault — private key never
+      enters the app; decryption is delegated to Key Vault's Decrypt API via
+      .WithAzureKeyVaultHsm(uri, keyName).
+    </Description>
+    <PackageTags>aspnetcore;security;azure;keyvault;kms;rsa;encryption;secureRequest;hsm</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Osama94/secure-request</RepositoryUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <!-- Prevent the SDK default glob from picking up test files in the tests\ subdirectory -->
+  <ItemGroup>
+    <Compile Remove="tests\**" />
+    <None Remove="tests\**" />
+    <EmbeddedResource Remove="tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      ProjectReference during local development — 'dotnet pack' automatically
+      converts this to a NuGet PackageReference in the generated .nuspec.
+    -->
+    <ProjectReference Include="..\SecureRequest\SecureRequest.csproj" />
+    <PackageReference Include="Azure.Security.KeyVault.Secrets" Version="4.6.0" />
+    <PackageReference Include="Azure.Security.KeyVault.Keys" Version="4.6.0" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- NuGet package metadata -->
+    <IsPackable>true</IsPackable>
+    <PackageId>SecureRequest</PackageId>
+    <Version>1.2.0</Version>
+    <Authors>Osama Ahmed</Authors>
+    <Product>SecureRequest</Product>
+    <Description>
+      ASP.NET Core middleware pipeline that adds RSA + AES-256-GCM body encryption,
+      HMAC-SHA256 request signing, timestamp validation, and nonce-based anti-replay
+      protection to any POST / PUT / PATCH endpoint. Zero static secrets —
+      all keys are generated per-request and exchanged via RSA. Pluggable key storage
+      supports Azure Key Vault, AWS KMS, Google Cloud Secret Manager, HashiCorp Vault,
+      or any custom IRsaKeyStorageProvider implementation.
+    </Description>
+    <PackageTags>aspnetcore;middleware;security;encryption;hmac;aes;rsa;request-signing;anti-replay;keyvault;kms;key-management</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Osama94/secure-request</RepositoryUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Only ASP.NET Core abstractions — no ABP, no EF, no third-party deps -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Exclude tests and samples — they have their own projects and package references -->
+  <ItemGroup>
+    <Compile Remove="tests\**" />
+    <Compile Remove="samples\**" />
+    <Content Remove="tests\**" />
+    <Content Remove="samples\**" />
+    <EmbeddedResource Remove="tests\**" />
+    <EmbeddedResource Remove="samples\**" />
+    <None Remove="tests\**" />
+    <None Remove="samples\**" />
+  </ItemGroup>
+
+</Project>

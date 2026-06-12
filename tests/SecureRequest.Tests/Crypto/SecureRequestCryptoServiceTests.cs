@@ -12,7 +12,7 @@ public class SecureRequestCryptoServiceTests : IDisposable
     public SecureRequestCryptoServiceTests()
     {
         _rsaKeyProvider.GenerateAndExportPrivateKey();
-        _service = new SecureRequestCryptoService(_rsaKeyProvider);
+        _service = new SecureRequestCryptoService(_rsaKeyProvider, new LocalRsaDecryptProvider(_rsaKeyProvider));
     }
 
     // ── DecryptSecretKey ──────────────────────────────────────────────────────

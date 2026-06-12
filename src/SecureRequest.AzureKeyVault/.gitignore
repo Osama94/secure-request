@@ -1,0 +1,18 @@
+## Build outputs
+bin/
+obj/
+*.nupkg
+*.snupkg
+
+## IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+## Rider
+.idea/
+
+## OS
+.DS_Store
+Thumbs.db
